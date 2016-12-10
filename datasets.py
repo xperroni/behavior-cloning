@@ -4,6 +4,7 @@ from glob import iglob
 from itertools import product
 from os.path import isdir
 from os.path import join as join_path
+from random import sample
 from re import search
 
 import numpy as np
@@ -58,7 +59,14 @@ def merge(title, *datasets):
     return Merged(title, X, y)
 
 
-class Data(object):
+class Attributes(object):
+    r'''Dynamic collection of named attributes.
+    '''
+    def __setattr__(self, name, value):
+        object.__setattr__(self, name, value)
+
+
+class Data(Attributes):
     r'''Base class for single-type data collection classes.
     '''
     def __init__(self, data):
@@ -155,7 +163,7 @@ class Likelihoods(Labels):
         return np.argmax(self[index])
 
 
-class Dataset(object):
+class Dataset(Attributes):
     r'''A collection of data cases and associated class identifiers.
     '''
     def __init__(self, *args, **kwargs):
@@ -236,6 +244,28 @@ class Dataset(object):
     def extend(self, dataset):
         self.X.extend(dataset.X)
         self.y.extend(dataset.y)
+
+
+class Culled(Dataset):
+    r'''A dataset where classes are trimmed down to the least common length.
+    '''
+    def __init__(self, *args, **kwargs):
+        Dataset.__init__(self, *args, **kwargs)
+        X = self.X
+        y = self.y
+
+        classes = y.classes.values()
+        n = np.min([len(cases) for cases in classes])
+
+        Xp = []
+        yp = []
+        for cases in classes:
+            k = sample(cases, n)
+            Xp.extend(X[k])
+            yp.extend(y[k])
+
+        X.data = np.array(Xp)
+        y.data = np.array(yp)
 
 
 class Vectorized(Dataset):

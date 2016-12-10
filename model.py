@@ -1,92 +1,93 @@
 import csv
-from argparse import ArgumentParser
-from glob import glob
-from os.path import join as joinpath
-from time import sleep
+import pickle
 
 from keras import backend as K
 from keras.layers import Convolution2D, Dense, Dropout, Flatten, Lambda, MaxPooling2D
 from keras.models import Sequential
 
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from matplotlib.animation import FuncAnimation
-
 import numpy as np
 from scipy.misc import imread
+from scipy.ndimage.filters import sobel
 
-from datasets import split, Tensors, Likelihoods, Dataset
-
-
-def grayscale(image):
-    grays = np.dot(image[...,:3], [0.299, 0.587, 0.114])
-    return grays[..., None]
+from inputs import arguments, preprocess
+from datasets import split, Tensors, Likelihoods, Culled, Dataset
 
 
-def splice(image):
-    (m, n) = image.shape[:2]
-    a = m // 2
-    b = 3 * m // 4
-
-    lc = 0
-    ld = n // 4
-    rc = 3 * ld
-    rd = n
-
-    return np.hstack((image[a:b, lc:ld], image[a:b, rc:rd]))
-
-
-def normalize(image):
-    image -= image.mean()
-    image /= image.std()
-    return image
-
-
-def preprocess(image):
-    return normalize(grayscale(image.astype(np.float32)))
-
+ANGLE_STEP = 0.2
 
 CENTER_IMAGE = 0
+LEFT_IMAGE = 1
+RIGHT_IMAGE = 2
 STEERING_ANGLE = 3
 
-def arguments():
-    parser = ArgumentParser(description='Model generation and training')
+def load_split(path, breadth):
+    dataset = load_dataset(path, breadth)
+    spread = dataset.y.spread
+    (train, val) = split(dataset)
+    train.y.spread = spread
 
-    parser.add_argument('path_dataset', type=str, help='Path to training data base folder.')
-    parser.add_argument('--breadth', type=int, default=7, help='Encoding resolution of the steering angle vector.')
-    parser.add_argument('--side', type=int, default=5, help='Length of the side of convolution layers.')
-    parser.add_argument('--depth', type=int, default=32, help='Number of output channels for convolution layers.')
-    parser.add_argument('--pool', type=int, default=2, help='Length of the side of max-pooling layers.')
-    parser.add_argument('--hidden', type=int, default=49, help='Length of the side of max-pooling layers.')
-    parser.add_argument('--batch', type=int, default=16, help='Size of training batches.')
-    parser.add_argument('--epochs', type=int, default=5, help='Number of epochs in the training step.')
-    parser.add_argument('--path_model', type=str, default='model.json', help='Path to model architecture.')
-    parser.add_argument('--path_weights', type=str, default='model.h5', help='Path to model weights.')
-
-    return parser.parse_args()
+    return (train, val)
 
 
-def load(path, breadth):
+def load_dataset(paths, breadth, culled=False):
+    if len(paths) == 1 and paths[0].endswith('.p'):
+        return load_pickled(paths[0])
+
     X = []
     y = []
-    with open(path) as stream:
-        data = csv.reader(stream)
-        for row in data:
-            X.append(preprocess(imread(row[CENTER_IMAGE])))
-            y.append(float(row[STEERING_ANGLE]))
+    for path in paths:
+        with open(path) as stream:
+            data = csv.reader(stream)
+            for row in data:
+                X.append(preprocess(imread(row[CENTER_IMAGE].strip())))
+                X.append(preprocess(imread(row[LEFT_IMAGE].strip())))
+                X.append(preprocess(imread(row[RIGHT_IMAGE].strip())))
+
+                angle = float(row[STEERING_ANGLE])
+                y.append(angle)
+                y.append(angle + ANGLE_STEP)
+                y.append(angle - ANGLE_STEP)
 
     X = Tensors(np.array(X))
 
     y = np.array(y)
     y_max = np.abs(y).max()
-    y += y_max
-    y *= (breadth - 1) / (2 * y_max)
-    y = np.round(y).astype(np.int)
-    y = Likelihoods(y, breadth)
+
+    half_breadth = breadth // 2
+    step = y_max / half_breadth
+
+    classes = [None] * breadth
+    classes[half_breadth] = (y == 0)
+    for i in range(half_breadth):
+        y_minus = ((i * -step) > y) & (y > ((i + 1) * -step))
+        y_plus  = ((i *  step) < y) & (y < ((i + 1) *  step))
+
+        classes[half_breadth - 1 - i] = y_minus
+        classes[half_breadth + 1 + i] = y_plus
+
+    for (i, k) in enumerate(classes):
+        y[k] = i
+
+    y = Likelihoods(y.astype(np.int), breadth)
+    y.spread = y_max
 
     dataset = Dataset('Train', X, y)
-    (train, val) = split(dataset)
-    return (train, val, y_max)
+    if culled:
+        dataset = Culled(dataset)
+
+    save_pickled(dataset, 'dataset.p')
+
+    return dataset
+
+
+def load_pickled(path):
+    with open(path, 'rb') as file:
+        return pickle.load(file)
+
+
+def save_pickled(dataset, path):
+    with open(path, 'wb') as file:
+        pickle.dump(dataset, file)
 
 
 def save(trained, test, args):
@@ -94,25 +95,6 @@ def save(trained, test, args):
         output.write(test.to_json())
 
     trained.save_weights(args.path_weights)
-
-
-def show(args):
-    paths = glob(joinpath(args.path_dataset, 'IMG', 'center_*.jpg'))
-    paths.sort()
-
-    (figure, plotter) = plt.subplots(1, 1)
-
-    #data = plotter.imshow(splice(imread(paths[0])), animated=True)
-    data = plotter.matshow(splice(imread(paths[0])), cmap=cm.gray)
-    def update(path):
-        print(path)
-        image = splice(imread(path))
-        data.set_data(image)
-        return data
-
-    animation = FuncAnimation(figure, update, paths, interval=100, repeat=False)
-
-    plt.show()
 
 
 def Model(inputs, side, depth, pool, hidden, breadth, reach=None):
@@ -141,7 +123,7 @@ def Model(inputs, side, depth, pool, hidden, breadth, reach=None):
 
 
 def train(args):
-    (D_train, D_val, y_max) = load(args.path_dataset, args.breadth)
+    (D_train, D_val) = load_split(args.path_datasets, args.breadth)
 
     trained = Model(
         D_train.X.shape[1:],
@@ -159,7 +141,7 @@ def train(args):
         args.pool,
         args.hidden,
         args.breadth,
-        reach=y_max
+        reach=D_train.y.spread
     )
 
     trained.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
