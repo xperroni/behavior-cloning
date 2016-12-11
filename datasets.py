@@ -1,15 +1,33 @@
-import pickle
-from collections import defaultdict
-from glob import iglob
 from itertools import product
-from os.path import isdir
-from os.path import join as join_path
-from random import sample
-from re import search
+from os.path import join as joinpath
+from random import choice, sample
 
 import numpy as np
-from scipy.misc import imread
 from sklearn.model_selection import train_test_split
+
+
+def resample(dataset):
+    classes = dataset.y.classes.values()
+    X = dataset.X
+    y = dataset.y
+
+    n_class = np.max([len(cases) for cases in classes])
+
+    folder = dataset.path
+    Xp = Images(joinpath(folder, 'Xr.bin'))
+    yp = Labels(joinpath(folder, 'yr.bin'), y.breadth)
+    for cases in classes:
+        n = len(cases)
+        if n == 0:
+            continue
+
+        k = list(cases)
+        k.extend([choice(cases) for i in range(n_class - n)])
+
+        Xp.extend(X[k])
+        yp.extend(y[k])
+
+    return Dataset(folder, Xp, yp)
 
 
 def split(dataset, rate=0.25):
@@ -69,8 +87,9 @@ class Attributes(object):
 class Data(Attributes):
     r'''Base class for single-type data collection classes.
     '''
-    def __init__(self, data):
+    def __init__(self, data, **kwargs):
         self.data = data
+        self.dtype = kwargs.get('dtype', np.float32)
 
     def __getitem__(self, index):
         return self.data[index]
@@ -79,10 +98,25 @@ class Data(Attributes):
         self.data[index] = value
 
     def __len__(self):
+        if isinstance(self.data, str):
+            return 0
+
         return len(self.data)
 
+    def resize(self, *reshape):
+        if isinstance(self.data, str):
+            self.data = np.memmap(self.data, mode='w+', dtype=self.dtype, shape=reshape)
+
+        self.data = np.memmap(self.data.filename, dtype=self.dtype, shape=reshape)
+
+    def append(self, item):
+        self.resize(len(self) + 1, *item.shape)
+        self.data[-1] = item
+
     def extend(self, data):
-        self.data = np.concatenate([self.data, data])
+        n = len(data)
+        self.resize(len(self) + n, *data[0].shape)
+        self.data[-n:] = data
 
     @property
     def shape(self):
@@ -90,20 +124,10 @@ class Data(Attributes):
 
 
 class Images(Data):
-    r'''Collection of RGB images, represented as 3D arrays of unsigned 8-bit integers.
-    '''
-    def __init__(self, data):
-        Data.__init__(self, data)
-
-    def image(self, index):
-        return self[index]
-
-
-class Tensors(Images):
     r'''Collection of multi-dimensional vectors.
     '''
-    def __init__(self, values):
-        Images.__init__(self, values.astype(np.float32))
+    def __init__(self, data, **kwargs):
+        Data.__init__(self, data, **kwargs)
 
     def image(self, index):
         x = self[index]
@@ -118,18 +142,23 @@ class Tensors(Images):
 
 
 class Labels(Data):
-    r'''Collection of class labels, represented as integer values.
+    r'''Collection of vectors indicating the likelihoods an input belongs to each of a set of classes.
     '''
-    def __init__(self, data, breadth):
-        Data.__init__(self, data)
+    def __init__(self, data, breadth, **kwargs):
+        Data.__init__(self, data, **kwargs)
         self.breadth = breadth
-        if breadth == None:
-            n = range(len(self))
-            classes = set(self.classof(i) for i in n)
-            self.breadth = len(classes)
+
+        if isinstance(self.data, str):
+            return
+
+        if len(data.shape) == 1:
+            data = data[:, None]
+
+        if data.shape[1] == 1:
+            self.data = (np.arange(self.breadth) == data).astype(np.float32)
 
     def classof(self, index):
-        return self[index]
+        return np.argmax(self[index])
 
     @property
     def classes(self):
@@ -141,85 +170,40 @@ class Labels(Data):
         return classes
 
 
-class Values(Data):
-    def __init__(self, data, breadth=0):
-        Data.__init__(self, data)
-        self.breadth = breadth
-
-
-class Likelihoods(Labels):
-    r'''Collection of vectors indicating the likelihoods an input belongs to each of a set of classes.
-    '''
-    def __init__(self, data, breadth):
-        Labels.__init__(self, data, breadth)
-
-        if len(data.shape) == 1:
-            data = data[:, None]
-
-        if data.shape[1] == 1:
-            self.data = (np.arange(self.breadth) == data).astype(np.float32)
-
-    def classof(self, index):
-        return np.argmax(self[index])
-
-
 class Dataset(Attributes):
     r'''A collection of data cases and associated class identifiers.
     '''
-    def __init__(self, *args, **kwargs):
-        r'''Create a new dataset instance.
-
-            Datasets can be loaded from files, for example:
-
-                dataset = Dataset('title', 'path/to/pickled_file.p')
-
-            They can also be created from other datasets:
-
-                dataset = Dataset(other_dataset)
-
-            or
-
-                dataset = Dataset(title, X, y)
-        '''
+    def __init__(self, *args):
+        self.path = args[0]
         if len(args) == 1:
-            self.__assign(args[0])
-            return
-
-        self.title = args[0]
-        if len(args) == 2:
-            (X, y) = self.__load(args[1], kwargs)
-            self.X = Images(X)
-            self.y = Labels(y, kwargs.get('breadth'))
+            self.__load(self.path)
         elif len(args) == 3:
             self.X = args[1]
             self.y = args[2]
+            self.__save(self.path)
         else:
             raise Exception('Invalid argument list: %s' % str(args))
 
-    def __assign(self, dataset):
-        self.title = dataset.title
-        self.X = dataset.X
-        self.y = dataset.y
+    def __load(self, folder):
+        path = joinpath(folder, 'mapped.txt')
+        text = ''.join(line.strip() for line in open(path))
+        metadata = eval(text)
 
-    def __load(self, path, kwargs):
-        if isdir(path):
-            X = []
-            y = []
-            for filename in iglob(join_path(path, '*')):
-                match = search(r'(\d+)_\d+\.', filename)
-                if match != None:
-                    image = imread(filename)
-                    label = int(match.group(1))
-                    X.append(image)
-                    y.append(label)
+        def load(filename, shape_data):
+            return np.memmap(filename, dtype=np.float32, mode='r', shape=shape_data)
 
-            return (np.array(X), np.array(y))
+        (X, y) = [load(*spec) for spec in metadata]
+        self.X = Images(X)
+        self.y = Labels(y, y.shape[1])
 
-        key_X = kwargs.get('key_X', 'features')
-        key_y = kwargs.get('key_y', 'labels')
-        with open(path, mode='rb') as data:
-            dataset = pickle.load(data, encoding=kwargs.get('encoding', 'ASCII'))
-            return (dataset[key_X], dataset[key_y])
+    def __save(self, folder):
+        mapped = [self.X.data, self.y.data]
+        with open(joinpath(folder, 'mapped.txt'), 'w') as out:
+            metadata = [(data.filename, data.shape) for data in mapped]
+            out.write(str(metadata))
+
+        for data in mapped:
+            data.flush()
 
     def __len__(self):
         return len(self.X)
@@ -242,8 +226,8 @@ class Dataset(Attributes):
         )
 
     def extend(self, dataset):
-        self.X.extend(dataset.X)
-        self.y.extend(dataset.y)
+        self.X.extend(dataset.X.data)
+        self.y.extend(dataset.y.data)
 
 
 class Culled(Dataset):
@@ -266,25 +250,3 @@ class Culled(Dataset):
 
         X.data = np.array(Xp)
         y.data = np.array(yp)
-
-
-class Vectorized(Dataset):
-    r'''A dataset where both inputs and outputs are represented as floating-point arrays.
-    '''
-    def __init__(self, *args, **kwargs):
-        Dataset.__init__(self, *args, **kwargs)
-        self.X = Tensors(self.X.data)
-        self.y = Likelihoods(self.y.data, self.y.breadth)
-
-
-class Normalized(Dataset):
-    def __init__(self, *args, **kwargs):
-        Dataset.__init__(self, *args, **kwargs)
-
-        X = self.X
-        n = X.shape[0]
-        d = X.shape[-1]
-        for (i, j) in product(range(n), range(d)):
-            channel = X[i, :, :, j]
-            channel -= channel.mean()
-            channel /= channel.std()

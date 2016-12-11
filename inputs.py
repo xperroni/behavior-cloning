@@ -7,15 +7,20 @@ def arguments():
     parser = ArgumentParser(description='Model generation and training')
 
     parser.add_argument('path_datasets', nargs='+', type=str, help='List of paths to training datasets base folders.')
-    parser.add_argument('--breadth', type=int, default=9, help='Encoding resolution of the steering angle vector.')
+    parser.add_argument('--breadth', type=int, default=21, help='Encoding resolution of the steering angle vector.')
+    #parser.add_argument('--padded', type=bool, default=True, help='Whether data categories should be padded to the highest size.')
     parser.add_argument('--side', type=int, default=5, help='Length of the side of convolution layers.')
     parser.add_argument('--depth', type=int, default=32, help='Number of output channels for convolution layers.')
     parser.add_argument('--pool', type=int, default=2, help='Length of the side of max-pooling layers.')
-    parser.add_argument('--hidden', type=int, default=49, help='Length of the side of max-pooling layers.')
+    parser.add_argument('--hidden', type=int, default=49, help='Number of hidden elements in the fully-connected module.')
     parser.add_argument('--batch', type=int, default=16, help='Size of training batches.')
     parser.add_argument('--epochs', type=int, default=5, help='Number of epochs in the training step.')
     parser.add_argument('--path_model', type=str, default='model.json', help='Path to model architecture.')
     parser.add_argument('--path_weights', type=str, default='model.h5', help='Path to model weights.')
+
+    parser.add_argument('--padded', dest='padded', action='store_true')
+    parser.add_argument('--not-padded', dest='padded', action='store_false')
+    parser.set_defaults(padded=True)
 
     return parser.parse_args()
 

@@ -1,5 +1,6 @@
 import csv
-import pickle
+from math import ceil
+from os.path import isdir
 
 from keras import backend as K
 from keras.layers import Convolution2D, Dense, Dropout, Flatten, Lambda, MaxPooling2D
@@ -10,15 +11,16 @@ from scipy.misc import imread
 from scipy.ndimage.filters import sobel
 
 from inputs import arguments, preprocess
-from datasets import split, Tensors, Likelihoods, Culled, Dataset
+from datasets import resample, Dataset, Images, Labels
 
 
-ANGLE_STEP = 0.2
+ANGLE_STEP = 0.1
 
 CENTER_IMAGE = 0
 LEFT_IMAGE = 1
 RIGHT_IMAGE = 2
 STEERING_ANGLE = 3
+THROTLE = 4
 
 def load_split(path, breadth):
     dataset = load_dataset(path, breadth)
@@ -29,65 +31,66 @@ def load_split(path, breadth):
     return (train, val)
 
 
-def load_dataset(paths, breadth, culled=False):
-    if len(paths) == 1 and paths[0].endswith('.p'):
-        return load_pickled(paths[0])
+def load_dataset(args):
+    paths = args.path_datasets
+    breadth = args.breadth
+    padded = args.padded
 
-    X = []
-    y = []
+    if len(paths) == 1 and isdir(paths[0]):
+        return Dataset(paths[0])
+
+    def image(path):
+        return preprocess(imread(path.strip()))
+
+    half_breadth = breadth // 2
+    def onehot(angle):
+        encoded = np.zeros(breadth)
+        if angle < -1.0:
+            encoded[0] = 1
+        elif angle == 0:
+            encoded[half_breadth] = 1
+        elif angle > 1.0:
+            encoded[-1] = 1
+        elif angle < 0:
+            i = int(ceil((angle + 1.0) * (half_breadth - 1)))
+            encoded[i] = 1
+        else: # angle > 0
+            i = half_breadth + int(ceil(angle * half_breadth))
+            encoded[i] = 1
+
+        return encoded
+
+    X = Images('X.bin')
+    y = Labels('y.bin', breadth)
     for path in paths:
         with open(path) as stream:
             data = csv.reader(stream)
             for row in data:
-                X.append(preprocess(imread(row[CENTER_IMAGE].strip())))
-                X.append(preprocess(imread(row[LEFT_IMAGE].strip())))
-                X.append(preprocess(imread(row[RIGHT_IMAGE].strip())))
+                if float(row[THROTLE]) < 1:
+                    continue
 
                 angle = float(row[STEERING_ANGLE])
-                y.append(angle)
-                y.append(angle + ANGLE_STEP)
-                y.append(angle - ANGLE_STEP)
 
-    X = Tensors(np.array(X))
+                image_c = image(row[CENTER_IMAGE])
+                label_c = onehot(angle)
 
-    y = np.array(y)
-    y_max = np.abs(y).max()
+                X.append(image_c)
+                y.append(label_c)
 
-    half_breadth = breadth // 2
-    step = y_max / half_breadth
+                #image_l = image(row[LEFT_IMAGE])
+                #label_l = onehot(angle + ANGLE_STEP)
 
-    classes = [None] * breadth
-    classes[half_breadth] = (y == 0)
-    for i in range(half_breadth):
-        y_minus = ((i * -step) > y) & (y > ((i + 1) * -step))
-        y_plus  = ((i *  step) < y) & (y < ((i + 1) *  step))
+                #image_r = image(row[RIGHT_IMAGE])
+                #label_r = onehot(angle - ANGLE_STEP)
 
-        classes[half_breadth - 1 - i] = y_minus
-        classes[half_breadth + 1 + i] = y_plus
+                #X.extend([image_c, image_l, image_r])
+                #y.extend([label_c, label_l, label_r])
 
-    for (i, k) in enumerate(classes):
-        y[k] = i
-
-    y = Likelihoods(y.astype(np.int), breadth)
-    y.spread = y_max
-
-    dataset = Dataset('Train', X, y)
-    if culled:
-        dataset = Culled(dataset)
-
-    save_pickled(dataset, 'dataset.p')
+    dataset = Dataset('./', X, y)
+    if padded:
+        dataset = resample(dataset)
 
     return dataset
-
-
-def load_pickled(path):
-    with open(path, 'rb') as file:
-        return pickle.load(file)
-
-
-def save_pickled(dataset, path):
-    with open(path, 'wb') as file:
-        pickle.dump(dataset, file)
 
 
 def save(trained, test, args):
@@ -123,7 +126,8 @@ def Model(inputs, side, depth, pool, hidden, breadth, reach=None):
 
 
 def train(args):
-    (D_train, D_val) = load_split(args.path_datasets, args.breadth)
+    #(D_train, D_val) = load_split(args.path_datasets, args.breadth)
+    D_train = load_dataset(args)
 
     trained = Model(
         D_train.X.shape[1:],
@@ -141,15 +145,15 @@ def train(args):
         args.pool,
         args.hidden,
         args.breadth,
-        reach=D_train.y.spread
+        reach=1.0
     )
 
     trained.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     trained.fit(D_train.X.data, D_train.y.data,
         batch_size=args.batch,
         nb_epoch=args.epochs,
-        verbose=1,
-        validation_data=(D_val.X.data, D_val.y.data)
+        verbose=1 #,
+        #validation_data=(D_val.X.data, D_val.y.data)
     )
 
     return (trained, test)

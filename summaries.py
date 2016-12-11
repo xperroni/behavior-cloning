@@ -2,14 +2,13 @@ from model import arguments, load_dataset
 
 
 def summaries(args):
-    dataset = load_dataset(args.path_datasets, args.breadth, culled=False)
+    dataset = load_dataset(args)
     breadth = dataset.y.breadth
-    spread = dataset.y.spread
     classes = dataset.y.classes
-    print(spread)
     for i in range(breadth):
-        t = 2 * (i / (breadth - 1) - 0.5) * spread
-        print('Class %d (%.3f rad): %d items' % (i, t, len(classes[i])))
+        n = len(classes[i])
+        t = 2 * (i / (breadth - 1) - 0.5)
+        print('Class %d (%.3f rad): %d items' % (i, t, n))
 
 
 def main():
