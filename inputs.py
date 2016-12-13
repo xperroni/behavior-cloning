@@ -13,6 +13,7 @@ def arguments():
     parser = ArgumentParser(description='Model generation and training')
 
     parser.add_argument('path_datasets', nargs='+', type=str, help='List of paths to training datasets base folders.')
+    parser.add_argument('--reach', type=float, default=0.5, help='Maximum absolute steering angle possible.')
     parser.add_argument('--breadth', type=int, default=21, help='Encoding resolution of the steering angle vector.')
     parser.add_argument('--hidden', type=int, default=1164, help='Number of hidden elements in the fully-connected module.')
     parser.add_argument('--dropout', type=float, default=0.5, help='Fraction of randomly selected layer inputs to drop during training.')
@@ -21,11 +22,6 @@ def arguments():
     parser.add_argument('--path_model', type=str, default='model', help='Path to model architecture.')
 
     return parser.parse_args()
-
-
-def grayscale(image):
-    grays = np.dot(image[...,:3], [0.299, 0.587, 0.114])
-    return grays[..., None]
 
 
 def clipped(image):
@@ -47,7 +43,6 @@ def normalize(image):
 
 def preprocess(image):
     return normalize(rgb2hsv(clipped(image)).astype(np.float))
-    #return normalize(grayscale(clipped(image).astype(np.float)))
 
 
 CENTER_IMAGE = 0
@@ -90,7 +85,6 @@ class Batches(object):
 
         breadth = self.breadth
         half_breadth = breadth // 2
-        angle_step = 1.0 / half_breadth
 
         def truncate(value, a, b):
             return min(max(value, a), b)
@@ -99,14 +93,14 @@ class Batches(object):
             encoded = np.zeros(breadth)
 
             i = half_breadth # if angle == 0
-            if angle < -1.0:
+            if angle < -1:
                 i = 0
-            elif angle > 1.0:
+            elif angle > 1:
                 i = breadth - 1
             elif angle < 0:
-                i = int(ceil((angle + 1.0) * (half_breadth - 1)))
+                i = int(ceil((half_breadth - 1) * (1.0 + angle)))
             elif angle > 0:
-                i = half_breadth + int(ceil(angle * half_breadth))
+                i = half_breadth + int(ceil(half_breadth * angle))
 
             i = truncate(i + offset, 0, breadth - 1)
 

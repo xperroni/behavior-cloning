@@ -21,7 +21,7 @@ def save(model, args):
     model.save_weights(path + '.h5')
 
 
-def Model(input_shape, hidden, breadth, dropout, reach=None):
+def Model(input_shape, reach, hidden, breadth, dropout):
     nonlinear='relu'
 
     model = Sequential()
@@ -36,7 +36,7 @@ def Model(input_shape, hidden, breadth, dropout, reach=None):
     model.add(Dense(breadth, name='output', activation='softmax'))
 
     half_breadth = breadth // 2
-    angle = lambda x: K.cast(K.argmax(x), 'float32') / half_breadth - 1.0
+    angle = lambda x: K.clip(K.cast(K.argmax(x), 'float32') / half_breadth - 1.0, -reach, reach)
     model.add(Lambda(angle, output_shape=(1,)))
 
     training = Sequential()
@@ -59,6 +59,7 @@ def train(args):
 
     (model, training) = Model(
         (66, 200, 3),
+        args.reach,
         args.hidden,
         args.breadth,
         args.dropout
