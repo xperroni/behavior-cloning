@@ -1,9 +1,10 @@
 from itertools import product
 from os.path import join as joinpath
-from random import choice, sample
+from random import choice, randrange, sample
 
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.utils import shuffle
 
 
 def resample(dataset):
@@ -103,20 +104,39 @@ class Data(Attributes):
 
         return len(self.data)
 
-    def resize(self, *reshape):
+    def resize(self, reshape):
         if isinstance(self.data, str):
             self.data = np.memmap(self.data, mode='w+', dtype=self.dtype, shape=reshape)
 
         self.data = np.memmap(self.data.filename, dtype=self.dtype, shape=reshape)
 
     def append(self, item):
-        self.resize(len(self) + 1, *item.shape)
-        self.data[-1] = item
+        n = len(self)
+        shape = (n + 1,)
+        if hasattr(item, 'shape'):
+            shape = shape + item.shape
+
+        self.resize(shape)
+
+        k = 0
+        if n > 0:
+            k = randrange(n)
+            self.data[-1] = self.data[k]
+
+        self.data[k] = item
 
     def extend(self, data):
-        n = len(data)
-        self.resize(len(self) + n, *data[0].shape)
-        self.data[-n:] = data
+        for item in data:
+            self.append(item)
+
+    def shuffle(self):
+        data = self.data
+        indexes = range(len(data))
+        for k in indexes:
+            (i, j) = sample(indexes, 2)
+            t = np.copy(data[i])
+            data[i] = data[j]
+            data[j] = t
 
     @property
     def shape(self):
@@ -194,9 +214,10 @@ class Dataset(Attributes):
 
         (X, y) = [load(*spec) for spec in metadata]
         self.X = Images(X)
-        self.y = Labels(y, y.shape[1])
+        self.y = Data(y)
 
     def __save(self, folder):
+        self.shuffle()
         mapped = [self.X.data, self.y.data]
         with open(joinpath(folder, 'mapped.txt'), 'w') as out:
             metadata = [(data.filename, data.shape) for data in mapped]
@@ -228,6 +249,10 @@ class Dataset(Attributes):
     def extend(self, dataset):
         self.X.extend(dataset.X.data)
         self.y.extend(dataset.y.data)
+
+    def shuffle(self):
+        self.X.shuffle()
+        self.y,shuffle()
 
 
 class Culled(Dataset):

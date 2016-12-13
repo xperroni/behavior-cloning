@@ -26,19 +26,38 @@ def show(args):
 
     (figure, plotters) = plt.subplots(1, 3)
 
+    class AnimationControl(object):
+        def __init__(self):
+            self.paused = True
+            self.index = 0
+
+        def onkey(self, event):
+            self.paused = not self.paused
+            #self.index += 1
+            #print(sides[0][self.index])
+
+        def __iter__(self):
+            while self.index < len(sides[0]):
+                yield self.index
+                if not self.paused:
+                    print(sides[0][self.index])
+                    self.index += 1
+
+    control = AnimationControl()
+    figure.canvas.mpl_connect('key_press_event', control.onkey)
+
     def image(path):
-        return preprocess(imread(path))[..., 0]
+        return imread(path)
+        #return preprocess(imread(path))[..., 0]
 
-    #data = plotter.imshow(splice(imread(paths[0])), animated=True)
-    canvases = [plotter.matshow(image(paths[0]), cmap=cm.gray) for (plotter, paths) in zip(plotters, sides)]
+    canvases = [plotter.imshow(image(paths[0]), cmap=cm.gray) for (plotter, paths) in zip(plotters, sides)]
     def update(i):
-        print(i)
-
         for (data, paths) in zip(canvases, sides):
             data.set_data(image(paths[i]))
+
         return canvases
 
-    animation = FuncAnimation(figure, update, len(sides[0]), interval=100, repeat=False)
+    animation = FuncAnimation(figure, update, control, interval=100, repeat=False)
 
     plt.show()
 
