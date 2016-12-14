@@ -2,12 +2,11 @@ from glob import glob
 from os.path import join as joinpath
 
 import matplotlib.pyplot as plt
-from matplotlib import cm
 from matplotlib.animation import FuncAnimation
 
 from scipy.misc import imread
 
-from inputs import arguments, preprocess
+from model import arguments
 
 
 def list_paths(folder, prefix):
@@ -33,8 +32,6 @@ def show(args):
 
         def onkey(self, event):
             self.paused = not self.paused
-            #self.index += 1
-            #print(sides[0][self.index])
 
         def __iter__(self):
             while self.index < len(sides[0]):
@@ -48,9 +45,8 @@ def show(args):
 
     def image(path):
         return imread(path)
-        #return preprocess(imread(path))[..., 0]
 
-    canvases = [plotter.imshow(image(paths[0]), cmap=cm.gray) for (plotter, paths) in zip(plotters, sides)]
+    canvases = [plotter.imshow(image(paths[0])) for (plotter, paths) in zip(plotters, sides)]
     def update(i):
         for (data, paths) in zip(canvases, sides):
             data.set_data(image(paths[i]))

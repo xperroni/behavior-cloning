@@ -10,8 +10,6 @@ from flask import Flask, render_template
 from keras.models import model_from_json
 from PIL import Image
 
-from inputs import preprocess
-
 
 class Client(object):
     def __init__(self, args):
@@ -59,7 +57,7 @@ class Client(object):
         # The current image from the center camera of the car
         image = data["image"]
         image = Image.open(BytesIO(base64.b64decode(image)))
-        image = preprocess(np.asarray(image))
+        image = np.asarray(image)
         image = image[None, :, :, :]
 
         steering_angle = self.model.predict(image, batch_size=1).flat[0]
