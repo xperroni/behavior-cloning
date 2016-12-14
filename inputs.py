@@ -13,6 +13,7 @@ def arguments():
     parser = ArgumentParser(description='Model generation and training')
 
     parser.add_argument('path_datasets', nargs='+', type=str, help='List of paths to training datasets base folders.')
+    parser.add_argument('--architecture', type=str, default='regression', help='Architecture to use, one of ("classification", "regression").')
     parser.add_argument('--reach', type=float, default=0.5, help='Maximum absolute steering angle possible.')
     parser.add_argument('--breadth', type=int, default=21, help='Encoding resolution of the steering angle vector.')
     parser.add_argument('--hidden', type=int, default=1164, help='Number of hidden elements in the fully-connected module.')
@@ -45,6 +46,35 @@ def preprocess(image):
     return normalize(rgb2hsv(clipped(image)).astype(np.float))
 
 
+def truncate(value, a, b):
+    return min(max(value, a), b)
+
+
+def continuous_y(angle, breadth, offset=0):
+    step = 1.0 / (breadth // 2)
+    return angle + step * offset
+
+
+def onehot_y(angle, breadth, offset=0):
+    encoded = np.zeros(breadth)
+    half_breadth = breadth // 2
+    i = half_breadth # if angle == 0
+    if angle < -1:
+        i = 0
+    elif angle > 1:
+        i = breadth - 1
+    elif angle < 0:
+        i = int(ceil((half_breadth - 1) * (1.0 + angle)))
+    elif angle > 0:
+        i = half_breadth + int(ceil(half_breadth * angle))
+
+    i = truncate(i + offset, 0, breadth - 1)
+
+    encoded[i] = 1
+
+    return encoded
+
+
 CENTER_IMAGE = 0
 LEFT_IMAGE = 1
 RIGHT_IMAGE = 2
@@ -54,11 +84,12 @@ BREAK = 5
 SPEED = 6
 
 class Batches(object):
-    def __init__(self, args, storage=list):
-        self.batch_size = args.batch
-        self.breadth = args.breadth
+    def __init__(self, encoder_y, storage=list, **kwargs):
+        self.batch_size = kwargs['batch']
+        self.breadth = kwargs['breadth']
+        self.encoder_y = encoder_y
         self.data = storage()
-        for (i, path) in enumerate(args.path_datasets):
+        for path in kwargs['path_datasets']:
             with open(path) as stream:
                 data = csv.reader(stream)
                 for row in data:
@@ -75,51 +106,29 @@ class Batches(object):
                         float(row[SPEED])
                     ]
 
-                    self.append(i, row)
+                    self.append(path, row)
 
     def __next__(self):
         data = self.sample()
 
-        def image(path):
+        def encoder_x(path):
             return preprocess(imread(path.strip()))
 
         breadth = self.breadth
-        half_breadth = breadth // 2
-
-        def truncate(value, a, b):
-            return min(max(value, a), b)
-
-        def onehot(angle, offset=0):
-            encoded = np.zeros(breadth)
-
-            i = half_breadth # if angle == 0
-            if angle < -1:
-                i = 0
-            elif angle > 1:
-                i = breadth - 1
-            elif angle < 0:
-                i = int(ceil((half_breadth - 1) * (1.0 + angle)))
-            elif angle > 0:
-                i = half_breadth + int(ceil(half_breadth * angle))
-
-            i = truncate(i + offset, 0, breadth - 1)
-
-            encoded[i] = 1
-
-            return encoded
+        encoder_y = self.encoder_y
 
         X = []
         y = []
         for row in data:
             angle = float(row[STEERING_ANGLE])
 
-            image_c = image(row[CENTER_IMAGE])
-            image_l = image(row[LEFT_IMAGE])
-            image_r = image(row[RIGHT_IMAGE])
+            image_c = encoder_x(row[CENTER_IMAGE])
+            image_l = encoder_x(row[LEFT_IMAGE])
+            image_r = encoder_x(row[RIGHT_IMAGE])
 
-            label_c = onehot(angle)
-            label_l = onehot(angle, 1)
-            label_r = onehot(angle, -1)
+            label_c = encoder_y(angle, breadth)
+            label_l = encoder_y(angle, breadth, 1)
+            label_r = encoder_y(angle, breadth, -1)
 
             X.extend([image_c, image_l, image_r])
             y.extend([label_c, label_l, label_r])
@@ -131,7 +140,7 @@ class Batches(object):
         d = self.batch_size * 3  # 3 pictures per input
         return n - (n % d)
 
-    def append(self, i, row):
+    def append(self, path, row):
         self.data.append(row)
 
     def sample(self):
@@ -139,16 +148,16 @@ class Batches(object):
 
 
 class Balanced(Batches):
-    def __init__(self, args):
-        Batches.__init__(self, args, lambda: defaultdict(list))
+    def __init__(self, encoder_y, **kwargs):
+        Batches.__init__(self, encoder_y, lambda: defaultdict(list), **kwargs)
 
     def __len__(self):
         n = sum(len(data) for data in self.data.values())
         d = self.batch_size * 3 * len(self.data)  # 3 pictures per category
         return n - (n % d)
 
-    def append(self, i, row):
-        self.data[i].append(row)
+    def append(self, path, row):
+        self.data[path].append(row)
 
     def sample(self):
         return sum((sample(data, self.batch_size) for data in self.data.values()), [])
