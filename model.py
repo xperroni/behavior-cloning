@@ -172,35 +172,6 @@ class Model(object):
             r'''Normalize input batches to mean 0 and standard deviation 1, then crops
                 height and width to dimensions (66, 200).
             '''
-            #b = x[:, :, :, 0:1]
-            #g = x[:, :, :, 1:2]
-            #r = x[:, :, :, 2:3]
-
-            #Wb = 0.114
-            #Wg = 0.587
-            #Wr = 0.299
-            #Wu = 0.492
-            #Wv = 0.877
-
-            #y = Wr * r + Wg * g + Wb * b
-            #u = Wu * (b - y)
-            #v = Wv * (r - y)
-
-            #yuv = K.concatenate([y, u, v], axis=3)
-            #yuv = yuv - K.mean(yuv, keepdims=True)
-            #yuv = yuv / K.std(yuv, keepdims=True)
-
-            #print(yuv)
-
-            #(m, n) = K.int_shape(yuv)[1:3]
-
-            #a = 60
-            #b = a + 66
-            #c = (n - 200) // 2
-            #d = 200 + c
-
-            #return yuv[:, a:b, c:d, :]
-
             x -= K.mean(x, keepdims=True)
             x /= K.std(x, keepdims=True)
 
