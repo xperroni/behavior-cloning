@@ -12,7 +12,20 @@ from PIL import Image
 
 
 class Client(object):
+    r'''Client for communication to the simulator.
+    '''
     def __init__(self, args):
+        r'''Create a new client.
+
+            **Arguments:**
+
+            `args`
+                Initialization parameters. Must be a object with a string attribute `model` (a
+                path to a JSON file) and a float attribute `throttle` (throttle value to be sent
+                to the simulator).
+
+            The `args` object must contain
+        '''
         with open(args.model, 'r') as file:
             json = ''.join(file.readlines())
             self.model = model_from_json(json)
@@ -26,6 +39,8 @@ class Client(object):
         self.sio.on('telemetry', self.telemetry)
 
     def start(self):
+        r'''Run the client.
+        '''
         # Wrap Flask application with engineio's middleware
         app = socketio.Middleware(self.sio, Flask(__name__))
 
@@ -33,6 +48,8 @@ class Client(object):
         eventlet.wsgi.server(eventlet.listen(('', 4567)), app)
 
     def send_control(self, steering_angle, throttle):
+        r'''Send a steering command to the simulator.
+        '''
         command = {
             'steering_angle': str(steering_angle),
             'throttle': str(throttle)
@@ -41,10 +58,14 @@ class Client(object):
         self.sio.emit("steer", data=command, skip_sid=True)
 
     def connect(self, sid, environ):
+        r'''Connect to the simulator.
+        '''
         print("connect ", sid)
         self.send_control(0, 0)
 
     def telemetry(self, sid, data):
+        r'''Event handler to receive data from the simulator.
+        '''
         # The current steering angle of the car
         # steering_angle = data["steering_angle"]
 
