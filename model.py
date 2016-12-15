@@ -17,13 +17,13 @@ def arguments():
     '''
     parser = ArgumentParser(description='Model generation and training')
 
-    parser.add_argument('path_datasets', nargs='+', type=str, help='List of paths to training datasets base folders.')
+    parser.add_argument('path_datasets', nargs='+', type=str, help='List of paths to training datasets.')
     parser.add_argument('--architecture', type=str, default='regression', help='Architecture to use, one of ("classification", "regression").')
     parser.add_argument('--reach', type=float, default=0.5, help='Maximum absolute steering angle possible.')
     parser.add_argument('--breadth', type=int, default=21, help='Encoding resolution of the steering angle vector.')
     parser.add_argument('--hidden', type=int, default=1164, help='Number of hidden elements in the fully-connected module.')
     parser.add_argument('--dropout', type=float, default=0.5, help='Fraction of randomly selected layer inputs to drop during training.')
-    parser.add_argument('--batch', type=int, default=18, help='Size of training batches.')
+    parser.add_argument('--batch', type=int, default=18, help='Minimum size of training batches, increased if not a multiple of `sum(len(datasets)) * 3`.')
     parser.add_argument('--epochs', type=int, default=10, help='Number of epochs in the training step.')
     parser.add_argument('--path_model', type=str, default='model', help='Path to model architecture.')
 
@@ -127,12 +127,11 @@ class Batches(object):
         X = []
         y = []
         for row in self.sample():
-            angle = float(row[STEERING_ANGLE])
-
             image_c = encoder_x(row[CENTER_IMAGE])
             image_l = encoder_x(row[LEFT_IMAGE])
             image_r = encoder_x(row[RIGHT_IMAGE])
 
+            angle = float(row[STEERING_ANGLE])
             label_c = encoder_y(angle, breadth)
             label_l = encoder_y(angle, breadth, 1)
             label_r = encoder_y(angle, breadth, -1)
@@ -163,7 +162,7 @@ class Model(object):
         self.epochs = kwargs['epochs']
 
         # It's often needed to use a different layer set for training than for testing
-        # (e.g. when using dropout layers). Therefore Model encapsulates two keras models,
+        # (e.g. when using dropout layers). Therefore Model encapsulates two Keras models,
         # adding layers to either or both as needed.
         self.graph = Sequential()
         self.training = Sequential()
@@ -172,9 +171,6 @@ class Model(object):
             r'''Normalize input batches to mean 0 and standard deviation 1, then crops
                 height and width to dimensions (66, 200).
             '''
-            x -= K.mean(x, keepdims=True)
-            x /= K.std(x, keepdims=True)
-
             (m, n) = K.int_shape(x)[1:3]
 
             a = 60
@@ -182,7 +178,11 @@ class Model(object):
             c = (n - 200) // 2
             d = 200 + c
 
-            return x[:, a:b, c:d, :]
+            x = x[:, a:b, c:d, :]
+            x -= K.mean(x, keepdims=True)
+            x /= K.std(x, keepdims=True)
+
+            return x
 
         # Convolution layers and parameters were taken from the "nvidia paper" on end-to-end autonomous steering.
         # See docs/nvidia.pdf
@@ -253,7 +253,7 @@ class Regression(Model):
         self.training.add(Dropout(dropout))
         self.add(Dense(1, name='output', activation=nonlinear))
 
-        self.training.compile(optimizer='adam', loss='mse', metrics=['mean_squared_error'])
+        self.training.compile(optimizer='adam', loss='mse')
 
 
 ARCHITECTURES = {
