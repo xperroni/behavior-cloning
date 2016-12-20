@@ -1,7 +1,0 @@
-Idea for generating dataset:
-
-1. Do three runs, in the middle of the road, the left and right borders;
-2. Wiggle left and right on all three runs;
-3. In the middle run, invert the angular acceleration of records (the idea is to nulify any turning in the middle);
-4. In the right, invert all turns right;
-5. In the left, invert all turns left.

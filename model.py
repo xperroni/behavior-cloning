@@ -415,7 +415,7 @@ class Regression(Network):
         self.training.add(Dropout(dropout))
         self.add(Dense(1, name='output', activation=nonlinear))
 
-        self.training.compile(optimizer='adam', loss='mse', metrics=['mean_squared_error'])
+        self.training.compile(optimizer='adam', loss='mse')
 
 
 ARCHITECTURES = {

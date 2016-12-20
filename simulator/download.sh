@@ -4,4 +4,4 @@ wget -nc https://d17h27t6h515a5.cloudfront.net/topher/2016/November/5831f0f7_sim
 unzip simulator-linux.zip
 mv "Default Linux desktop Universal.x86_64" simulator
 mv "Default Linux desktop Universal_Data" simulator_Data
-rm Default Linux desktop Universal.x86
+rm "Default Linux desktop Universal.x86"
