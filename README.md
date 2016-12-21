@@ -6,7 +6,11 @@ This project demonstrates the use of convolutional networks and deep learning to
 
 The project is implemented in Python, on top of the [Keras](https://keras.io/) framework with [TensorFlow](https://www.tensorflow.org/) backend. Code is organized in two modules, the model trainer ([`model.py`](model.py)) and the simulator client ([`drive.py`](drive.py)).
 
-To run the model trainer, open a terminal window and type:
+To download training and validation datasets, open a terminal window and type:
+
+    (cd datasets ; ./download.sh)
+
+To run the model trainer, type:
 
     python model.py <list of train recordings> <validation recording> --architecture <architecture>
 
