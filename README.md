@@ -60,11 +60,11 @@ The steeper minimal requirements for successful steering were achieved in two st
 
 Two architectures were implemented in this project. The first uses a convolutional network to extract features from input images, then feeds them into a logistic classification network that maps inputs to a set of discrete steering angles (represented as cells of one-hot encoded vectors). Rectified Linear Units (ReLU's) are used to introduce nonlinearity between layers. Once the network is trained, an extra layer converting the vectors back into angle values is plugged at the end. See the figure below for an illustration.
 
-<img src="images/architecture_classification.svg" width="800">
+<img src="https://xperroni.github.io/behavior-cloning/images/architecture_classification.svg" width="800">
 
 The second architecture takes the output of the convolutional network and feeds it into a multilayer perceptron network, whose funneling layers converge into a single output value &ndash; the steering angle associated to a given output. In contrast to the previous architecture, the hyperbolic tangent function is used instead of ReLU's for nonlinearity transform; this is due to the fact that the output of this network is in the range `[-1, 1]`, whereas classification network outputs are in the range `[0, 1]`.
 
-<img src="images/architecture_regression.svg" width="800">
+<img src="https://xperroni.github.io/behavior-cloning/images/architecture_regression.svg" width="800">
 
 Both networks also perform normalization of visual inputs. This is done by cropping image inputs to (row, column) dimensions `(66, 200)`, then subtracting the mean and dividing by the standard deviation.
 
